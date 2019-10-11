@@ -8,10 +8,11 @@ export PYTHONUNBUFFERED="True"
 GPU_ID=$1
 DATASET=$2
 NET=$3
+ITERS=$4
 
 array=( $@ )
 len=${#array[@]}
-EXTRA_ARGS=${array[@]:3:$len}
+EXTRA_ARGS=${array[@]:4:$len}
 EXTRA_ARGS_SLUG=${EXTRA_ARGS// /_}
 
 case ${DATASET} in
@@ -25,15 +26,39 @@ case ${DATASET} in
   pascal_voc_0712)
     TRAIN_IMDB="voc_2007_trainval+voc_2012_trainval"
     TEST_IMDB="voc_2007_test"
-    ITERS=110000
+    ITERS=${ITERS}
     ANCHORS="[8,16,32]"
     RATIOS="[0.5,1,2]"
     ;;
   coco)
-    TRAIN_IMDB="coco_2014_train+coco_2014_valminusminival"
+    TRAIN_IMDB="coco_2014_train"
     TEST_IMDB="coco_2014_minival"
     ITERS=490000
     ANCHORS="[4,8,16,32]"
+    RATIOS="[0.5,1,2]"
+    ;;
+  chest_xrays)
+    TRAIN_IMDB="chest_xrays_trainval"
+    TEST_IMDB="chest_xrays_test"
+    STEPSIZE="[1200]"
+    ITERS=${ITERS}
+    ANCHORS="[8,16,32]"
+    RATIOS="[0.5,1,2]"
+    ;;
+  open_images)
+    TRAIN_IMDB="open_images_trainval"
+    TEST_IMDB="open_images_test"
+    STEPSIZE="[960000]"
+    ITERS=${ITERS}
+    ANCHORS="[8,16,32]"
+    RATIOS="[0.5,1,2]"
+    ;;
+  open_images_mini)
+    TRAIN_IMDB="open_images_minitrainval"
+    TEST_IMDB="open_images_test"
+    STEPSIZE="[480000]"
+    ITERS=${ITERS}
+    ANCHORS="[8,16,32]"
     RATIOS="[0.5,1,2]"
     ;;
   *)
@@ -61,15 +86,13 @@ if [[ ! -z  ${EXTRA_ARGS_SLUG}  ]]; then
     --cfg experiments/cfgs/${NET}.yml \
     --tag ${EXTRA_ARGS_SLUG} \
     --net ${NET} \
-    --set ANCHOR_SCALES ${ANCHORS} ANCHOR_RATIOS ${RATIOS} \
-          ${EXTRA_ARGS}
+    --set ANCHOR_SCALES ${ANCHORS} ANCHOR_RATIOS ${RATIOS} 
 else
   CUDA_VISIBLE_DEVICES=${GPU_ID} time python ./tools/test_net.py \
     --imdb ${TEST_IMDB} \
     --model ${NET_FINAL} \
     --cfg experiments/cfgs/${NET}.yml \
     --net ${NET} \
-    --set ANCHOR_SCALES ${ANCHORS} ANCHOR_RATIOS ${RATIOS} \
-          ${EXTRA_ARGS}
+    --set ANCHOR_SCALES ${ANCHORS} ANCHOR_RATIOS ${RATIOS} 
 fi
 

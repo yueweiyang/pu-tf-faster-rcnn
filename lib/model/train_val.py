@@ -41,6 +41,8 @@ class SolverWrapper(object):
     if not os.path.exists(self.tbvaldir):
       os.makedirs(self.tbvaldir)
     self.pretrained_model = pretrained_model
+    self.cls_priors = {}
+#     self.cls_est_ratio = {}
 
   def snapshot(self, sess, iter):
     net = self.net
@@ -76,10 +78,23 @@ class SolverWrapper(object):
       pickle.dump(cur_val, fid, pickle.HIGHEST_PROTOCOL)
       pickle.dump(perm_val, fid, pickle.HIGHEST_PROTOCOL)
       pickle.dump(iter, fid, pickle.HIGHEST_PROTOCOL)
+        
+    cnfilename = cfg.TRAIN.SNAPSHOT_PREFIX + '_iter_{:d}'.format(iter) + '.pickle'
+    cnfilename = os.path.join(self.output_dir, cnfilename)
+    prior_rpn = self.cls_priors['rpn_cls_prior']
+    prior_rcn = self.cls_priors['rcn_cls_priors']
+#     ratio_rpn = self.cls_est_ratio['rpn_est_ratio'] 
+#     ratio_rcn = self.cls_est_ratio['rcn_est_ratio']
+    
+    with open(cnfilename, 'wb') as fid2:
+      pickle.dump(prior_rpn, fid2, pickle.HIGHEST_PROTOCOL)
+      pickle.dump(prior_rcn, fid2, pickle.HIGHEST_PROTOCOL)
+#       pickle.dump(ratio_rpn, fid2, pickle.HIGHEST_PROTOCOL)
+#       pickle.dump(ratio_rcn, fid2, pickle.HIGHEST_PROTOCOL)
 
-    return filename, nfilename
+    return filename, nfilename, cnfilename
 
-  def from_snapshot(self, sess, sfile, nfile):
+  def from_snapshot(self, sess, sfile, nfile, cfile):
     print('Restoring model snapshots from {:s}'.format(sfile))
     self.saver.restore(sess, sfile)
     print('Restored.')
@@ -87,18 +102,30 @@ class SolverWrapper(object):
     # tried my best to find the random states so that it can be recovered exactly
     # However the Tensorflow state is currently not available
     with open(nfile, 'rb') as fid:
-      st0 = pickle.load(fid)
-      cur = pickle.load(fid)
-      perm = pickle.load(fid)
-      cur_val = pickle.load(fid)
-      perm_val = pickle.load(fid)
-      last_snapshot_iter = pickle.load(fid)
+        st0 = pickle.load(fid)
+        cur = pickle.load(fid)
+        perm = pickle.load(fid)
+        cur_val = pickle.load(fid)
+        perm_val = pickle.load(fid)
+        last_snapshot_iter = pickle.load(fid)
 
-      np.random.set_state(st0)
-      self.data_layer._cur = cur
-      self.data_layer._perm = perm
-      self.data_layer_val._cur = cur_val
-      self.data_layer_val._perm = perm_val
+        np.random.set_state(st0)
+        self.data_layer._cur = cur
+        self.data_layer._perm = perm
+        self.data_layer_val._cur = cur_val
+        self.data_layer_val._perm = perm_val
+
+
+    with open(cfile, 'rb') as fid2:
+        prior_rpn = pickle.load(fid2)
+        prior_rcn = pickle.load(fid2)
+#         ratio_rpn = pickle.load(fid2)
+#         ratio_rcn = pickle.load(fid2)
+
+        self.cls_priors['rpn_cls_prior'] = prior_rpn
+        self.cls_priors['rcn_cls_priors'] = prior_rcn
+#         self.cls_est_ratio['rpn_est_ratio'] = ratio_rpn
+#         self.cls_est_ratio['rcn_est_ratio'] = ratio_rcn
 
     return last_snapshot_iter
 
@@ -171,13 +198,20 @@ class SolverWrapper(object):
 
     lsf = len(sfiles)
     assert len(nfiles) == lsf
+    
+    cfiles = os.path.join(self.output_dir, cfg.TRAIN.SNAPSHOT_PREFIX + '_iter_*.pickle')
+    cfiles = glob.glob(cfiles)
+    cfiles.sort(key=lambda i: int(i.split('/')[-1].split('_')[-1][:-7]))
+    redfiles = [redfile.replace('.pkl','.pickle') for redfile in redfiles]
+    cfiles = [cc for cc in cfiles if cc not in redfiles]
 
-    return lsf, nfiles, sfiles
+    return lsf, nfiles, sfiles, cfiles
 
   def initialize(self, sess):
     # Initial file lists are empty
     np_paths = []
     ss_paths = []
+    cn_paths = []
     # Fresh train directly from ImageNet weights
     print('Loading initial model weights from {:s}'.format(self.pretrained_model))
     variables = tf.global_variables()
@@ -198,15 +232,21 @@ class SolverWrapper(object):
     last_snapshot_iter = 0
     rate = cfg.TRAIN.LEARNING_RATE
     stepsizes = list(cfg.TRAIN.STEPSIZE)
+    
+    self.cls_priors['rpn_cls_prior'] = []
+    self.cls_priors['rcn_cls_priors'] = []
+#     self.cls_est_ratio['rpn_est_ratio'] = []
+#     self.cls_est_ratio['rcn_est_ratio'] = []
 
-    return rate, last_snapshot_iter, stepsizes, np_paths, ss_paths
+    return rate, last_snapshot_iter, stepsizes, np_paths, ss_paths, cn_paths
 
-  def restore(self, sess, sfile, nfile):
+  def restore(self, sess, sfile, nfile, cfile):
     # Get the most recent snapshot and restore
     np_paths = [nfile]
     ss_paths = [sfile]
+    cn_paths = [cfile]
     # Restore model from snapshots
-    last_snapshot_iter = self.from_snapshot(sess, sfile, nfile)
+    last_snapshot_iter = self.from_snapshot(sess, sfile, nfile, cfile)
     # Set the learning rate
     rate = cfg.TRAIN.LEARNING_RATE
     stepsizes = []
@@ -216,14 +256,20 @@ class SolverWrapper(object):
       else:
         stepsizes.append(stepsize)
 
-    return rate, last_snapshot_iter, stepsizes, np_paths, ss_paths
+    return rate, last_snapshot_iter, stepsizes, np_paths, ss_paths, cn_paths
 
-  def remove_snapshot(self, np_paths, ss_paths):
+  def remove_snapshot(self, np_paths, ss_paths, cn_paths):
     to_remove = len(np_paths) - cfg.TRAIN.SNAPSHOT_KEPT
     for c in range(to_remove):
       nfile = np_paths[0]
       os.remove(str(nfile))
       np_paths.remove(nfile)
+    
+    to_remove = len(cn_paths) - cfg.TRAIN.SNAPSHOT_KEPT
+    for c in range(to_remove):
+      cfile = cn_paths[0]
+      os.remove(str(cfile))
+      cn_paths.remove(cfile)
 
     to_remove = len(ss_paths) - cfg.TRAIN.SNAPSHOT_KEPT
     for c in range(to_remove):
@@ -238,25 +284,36 @@ class SolverWrapper(object):
       sfile_meta = sfile + '.meta'
       os.remove(str(sfile_meta))
       ss_paths.remove(sfile)
+    
+  def write_roi_paths(self):
+    path = cfg.DATA_DIR+'/image_paths_txt/'+self.imdb.name+'.txt'
+    roi_paths = [self.roidb[i]['image'] for i in self.data_layer._perm]
+    with open(path,'w') as f:
+        f.write('\n'.join(roi_paths))
+    f.close()
+    print('Done writing image paths!!!')
 
   def train_model(self, sess, max_iters):
     # Build data layers for both training and validation set
     self.data_layer = RoIDataLayer(self.roidb, self.imdb.num_classes)
     self.data_layer_val = RoIDataLayer(self.valroidb, self.imdb.num_classes, random=True)
+    
+    self.write_roi_paths()
 
     # Construct the computation graph
     lr, train_op = self.construct_graph(sess)
 
     # Find previous snapshots if there is any to restore from
-    lsf, nfiles, sfiles = self.find_previous()
+    lsf, nfiles, sfiles, cfiles = self.find_previous()
 
     # Initialize the variables or restore them from the last snapshot
     if lsf == 0:
-      rate, last_snapshot_iter, stepsizes, np_paths, ss_paths = self.initialize(sess)
+      rate, last_snapshot_iter, stepsizes, np_paths, ss_paths, cn_paths = self.initialize(sess)
     else:
-      rate, last_snapshot_iter, stepsizes, np_paths, ss_paths = self.restore(sess, 
+      rate, last_snapshot_iter, stepsizes, np_paths, ss_paths, cn_paths = self.restore(sess, 
                                                                             str(sfiles[-1]), 
-                                                                            str(nfiles[-1]))
+                                                                            str(nfiles[-1]),
+                                                                            str(cfiles[-1]))
     timer = Timer()
     iter = last_snapshot_iter + 1
     last_summary_time = time.time()
@@ -276,11 +333,12 @@ class SolverWrapper(object):
       timer.tic()
       # Get training data, one batch at a time
       blobs = self.data_layer.forward()
+#       print('#',blobs['path'])
 
       now = time.time()
       if iter == 1 or now - last_summary_time > cfg.TRAIN.SUMMARY_INTERVAL:
         # Compute the graph with summary
-        rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, total_loss, summary = \
+        rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, total_loss, summary, rpn_prior, rcn_prior = \
           self.net.train_step_with_summary(sess, blobs, train_op)
         self.writer.add_summary(summary, float(iter))
         # Also check the summary on the validation set
@@ -290,9 +348,23 @@ class SolverWrapper(object):
         last_summary_time = now
       else:
         # Compute the graph without summary
-        rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, total_loss = \
+        rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, total_loss, rpn_prior, rcn_prior= \
           self.net.train_step(sess, blobs, train_op)
       timer.toc()
+    
+      self.cls_priors['rpn_cls_prior'].append(rpn_prior)
+      self.cls_priors['rcn_cls_priors'].append(rcn_prior)
+#       self.cls_est_ratio['rpn_est_ratio'].append(rpn_ratio)
+#       self.cls_est_ratio['rcn_est_ratio'].append(rcn_ratio)
+      
+#       rpn_cls_score_reshape = np.reshape(rpn_score,(-1,2))
+#       rpn_cls_score_reshape = np.exp(rpn_cls_score_reshape)/(np.sum(np.exp(rpn_cls_score_reshape),axis=1)[:,np.newaxis])
+#       rpn_cls_score_reshape = rpn_cls_score_reshape[:,1]
+#       labels = np.reshape(rpn_labels,(-1))
+#       temp = np.where(labels!=-1)[0]
+#       t = np.where(labels==0)[0]
+#       print('######after222: ',(np.sum(rpn_cls_score_reshape[t]>=0.9)+np.sum(labels==1))/len(temp))
+
 
       # Display training information
       if iter % (cfg.TRAIN.DISPLAY) == 0:
@@ -300,17 +372,19 @@ class SolverWrapper(object):
               '>>> rpn_loss_box: %.6f\n >>> loss_cls: %.6f\n >>> loss_box: %.6f\n >>> lr: %f' % \
               (iter, max_iters, total_loss, rpn_loss_cls, rpn_loss_box, loss_cls, loss_box, lr.eval()))
         print('speed: {:.3f}s / iter'.format(timer.average_time))
+        print('prior_test: ',rpn_prior)
 
       # Snapshotting
       if iter % cfg.TRAIN.SNAPSHOT_ITERS == 0:
         last_snapshot_iter = iter
-        ss_path, np_path = self.snapshot(sess, iter)
+        ss_path, np_path, cn_path = self.snapshot(sess, iter)
         np_paths.append(np_path)
         ss_paths.append(ss_path)
+        cn_paths.append(cn_path)
 
         # Remove the old snapshots if there are too many
         if len(np_paths) > cfg.TRAIN.SNAPSHOT_KEPT:
-          self.remove_snapshot(np_paths, ss_paths)
+          self.remove_snapshot(np_paths, ss_paths, cn_paths)
 
       iter += 1
 

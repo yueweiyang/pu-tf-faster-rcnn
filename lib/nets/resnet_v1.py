@@ -44,8 +44,8 @@ def resnet_arg_scope(is_training=True,
       return arg_sc
 
 class resnetv1(Network):
-  def __init__(self, num_layers=50):
-    Network.__init__(self)
+  def __init__(self, rpn_cls_method,rcn_cls_method, num_classes,num_layers=50):
+    Network.__init__(self,rpn_cls_method,rcn_cls_method, num_classes)
     self._feat_stride = [16, ]
     self._feat_compress = [1. / float(self._feat_stride[0]), ]
     self._num_layers = num_layers

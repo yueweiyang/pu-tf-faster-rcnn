@@ -23,117 +23,135 @@ from nets.resnet_v1 import resnetv1
 from nets.mobilenet_v1 import mobilenetv1
 
 def parse_args():
-  """
-  Parse input arguments
-  """
-  parser = argparse.ArgumentParser(description='Train a Fast R-CNN network')
-  parser.add_argument('--cfg', dest='cfg_file',
+    """
+    Parse input arguments
+    """
+    parser = argparse.ArgumentParser(description='Train a Fast R-CNN network')
+    parser.add_argument('--cfg', dest='cfg_file',
                       help='optional config file',
                       default=None, type=str)
-  parser.add_argument('--weight', dest='weight',
+    parser.add_argument('--weight', dest='weight',
                       help='initialize with pretrained model weights',
                       type=str)
-  parser.add_argument('--imdb', dest='imdb_name',
+    parser.add_argument('--imdb', dest='imdb_name',
                       help='dataset to train on',
                       default='voc_2007_trainval', type=str)
-  parser.add_argument('--imdbval', dest='imdbval_name',
+    parser.add_argument('--imdbval', dest='imdbval_name',
                       help='dataset to validate on',
                       default='voc_2007_test', type=str)
-  parser.add_argument('--iters', dest='max_iters',
+    parser.add_argument('--iters', dest='max_iters',
                       help='number of iterations to train',
                       default=70000, type=int)
-  parser.add_argument('--tag', dest='tag',
+    parser.add_argument('--tag', dest='tag',
                       help='tag of the model',
                       default=None, type=str)
-  parser.add_argument('--net', dest='net',
+    parser.add_argument('--net', dest='net',
                       help='vgg16, res50, res101, res152, mobile',
                       default='res50', type=str)
-  parser.add_argument('--set', dest='set_cfgs',
+    parser.add_argument('--ratio_data', dest='ratio_data',
+                      help='Ratio of total training data', default=1.0,
+                      type=float)
+    parser.add_argument('--ratio_bbox', dest='ratio_bbox',
+                      help='Ratio of total bounding boxes', default=1.0,
+                      type=float)
+    parser.add_argument('--rpn_cls_method', dest='rpn_cls_method',
+                      help='RPN Classfication Methods', default='PN',
+                      type=str)
+    parser.add_argument('--rcn_cls_method', dest='rcn_cls_method',
+                      help='RCN Classfication Methods', default='PN',
+                      type=str)
+    parser.add_argument('--set', dest='set_cfgs',
                       help='set config keys', default=None,
                       nargs=argparse.REMAINDER)
 
-  if len(sys.argv) == 1:
-    parser.print_help()
-    sys.exit(1)
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(1)
 
-  args = parser.parse_args()
-  return args
+    args = parser.parse_args()
+    return args
 
 
 def combined_roidb(imdb_names):
-  """
-  Combine multiple roidbs
-  """
+    """
+    Combine multiple roidbs
+    """
 
-  def get_roidb(imdb_name):
-    imdb = get_imdb(imdb_name)
-    print('Loaded dataset `{:s}` for training'.format(imdb.name))
-    imdb.set_proposal_method(cfg.TRAIN.PROPOSAL_METHOD)
-    print('Set proposal method: {:s}'.format(cfg.TRAIN.PROPOSAL_METHOD))
-    roidb = get_training_roidb(imdb)
-    return roidb
+    def get_roidb(imdb_name):
+        imdb = get_imdb(imdb_name)
+        print('Loaded dataset `{:s}` for training'.format(imdb.name))
+        imdb.set_proposal_method(cfg.TRAIN.PROPOSAL_METHOD)
+        print('Set proposal method: {:s}'.format(cfg.TRAIN.PROPOSAL_METHOD))
+        roidb = get_training_roidb(imdb)
+        return roidb
 
-  roidbs = [get_roidb(s) for s in imdb_names.split('+')]
-  roidb = roidbs[0]
-  if len(roidbs) > 1:
-    for r in roidbs[1:]:
-      roidb.extend(r)
-    tmp = get_imdb(imdb_names.split('+')[1])
-    imdb = datasets.imdb.imdb(imdb_names, tmp.classes)
-  else:
-    imdb = get_imdb(imdb_names)
-  return imdb, roidb
+    roidbs = [get_roidb(s) for s in imdb_names.split('+')]
+    roidb = roidbs[0]
+    if len(roidbs) > 1:
+        for r in roidbs[1:]:
+          roidb.extend(r)
+        tmp = get_imdb(imdb_names.split('+')[1])
+        imdb = datasets.imdb.imdb(imdb_names, tmp.classes)
+    else:
+        imdb = get_imdb(imdb_names)
+    return imdb, roidb
 
 
 if __name__ == '__main__':
-  args = parse_args()
+    args = parse_args()
 
-  print('Called with args:')
-  print(args)
+    print('Called with args:')
+    print(args)
 
-  if args.cfg_file is not None:
-    cfg_from_file(args.cfg_file)
-  if args.set_cfgs is not None:
-    cfg_from_list(args.set_cfgs)
+    if args.cfg_file is not None:
+        cfg_from_file(args.cfg_file)
+    if args.set_cfgs is not None:
+        print('###',args.set_cfgs)
+        cfg_from_list(args.set_cfgs)
 
-  print('Using config:')
-  pprint.pprint(cfg)
+    print('Using config:')
+    pprint.pprint(cfg)
 
-  np.random.seed(cfg.RNG_SEED)
+    np.random.seed(cfg.RNG_SEED)
 
-  # train set
-  imdb, roidb = combined_roidb(args.imdb_name)
-  print('{:d} roidb entries'.format(len(roidb)))
+    # train set
+    imdb_names = args.imdb_name.split('+')
+    imdb_names_new = [name+'_{}_{}'.format(args.ratio_data,args.ratio_bbox) for name in imdb_names]
+    imdb_names_new = '+'.join(imdb_names_new)
+    imdb, roidb = combined_roidb(imdb_names_new)
+    print('{:d} roidb entries'.format(len(roidb)))
 
-  # output directory where the models are saved
-  output_dir = get_output_dir(imdb, args.tag)
-  print('Output will be saved to `{:s}`'.format(output_dir))
+    # output directory where the models are saved
+    output_dir = get_output_dir(args.imdb_name, args.tag)
+    print('Output will be saved to `{:s}`'.format(output_dir))
 
-  # tensorboard directory where the summaries are saved during training
-  tb_dir = get_output_tb_dir(imdb, args.tag)
-  print('TensorFlow summaries will be saved to `{:s}`'.format(tb_dir))
+    # tensorboard directory where the summaries are saved during training
+    tb_dir = get_output_tb_dir(imdb, args.tag)
+    print('TensorFlow summaries will be saved to `{:s}`'.format(tb_dir))
 
-  # also add the validation set, but with no flipping images
-  orgflip = cfg.TRAIN.USE_FLIPPED
-  cfg.TRAIN.USE_FLIPPED = False
-  _, valroidb = combined_roidb(args.imdbval_name)
-  print('{:d} validation roidb entries'.format(len(valroidb)))
-  cfg.TRAIN.USE_FLIPPED = orgflip
+    # also add the validation set, but with no flipping images
+    orgflip = cfg.TRAIN.USE_FLIPPED
+    cfg.TRAIN.USE_FLIPPED = False
+    _, valroidb = combined_roidb(args.imdbval_name+'_1.0_1.0')
+    print('{:d} validation roidb entries'.format(len(valroidb)))
+    cfg.TRAIN.USE_FLIPPED = orgflip
 
-  # load network
-  if args.net == 'vgg16':
-    net = vgg16()
-  elif args.net == 'res50':
-    net = resnetv1(num_layers=50)
-  elif args.net == 'res101':
-    net = resnetv1(num_layers=101)
-  elif args.net == 'res152':
-    net = resnetv1(num_layers=152)
-  elif args.net == 'mobile':
-    net = mobilenetv1()
-  else:
-    raise NotImplementedError
+    # load network
+    if args.net == 'vgg16':
+        net = vgg16(args.rpn_cls_method,args.rcn_cls_method,imdb._num_classes)
+    elif args.net == 'res50':
+        net = resnetv1(args.rpn_cls_method,args.rcn_cls_method,imdb._num_classes,num_layers=50)
+    elif args.net == 'res101':
+        net = resnetv1(args.rpn_cls_method,args.rcn_cls_method,imdb._num_classes,num_layers=101)
+    elif args.net == 'res152':
+        net = resnetv1(args.rpn_cls_method,args.rcn_cls_method,imdb._num_classes,num_layers=152)
+    elif args.net == 'mobile':
+        net = mobilenetv1(args.rpn_cls_method,args.rcn_cls_method)
+    else:
+        raise NotImplementedError
     
-  train_net(net, imdb, roidb, valroidb, output_dir, tb_dir,
+    train_net(net, imdb, roidb, valroidb, output_dir, tb_dir,
             pretrained_model=args.weight,
             max_iters=args.max_iters)
+
+

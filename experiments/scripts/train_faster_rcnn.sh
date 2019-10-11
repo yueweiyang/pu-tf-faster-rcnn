@@ -8,10 +8,15 @@ export PYTHONUNBUFFERED="True"
 GPU_ID=$1
 DATASET=$2
 NET=$3
+RATIO_DATA=$4
+RATIO_BBOX=$5
+RPN_CLS_METHOD=$6
+RCN_CLS_METHOD=$7
+ITERS=$8
 
 array=( $@ )
 len=${#array[@]}
-EXTRA_ARGS=${array[@]:3:$len}
+EXTRA_ARGS=${array[@]:8:$len}
 EXTRA_ARGS_SLUG=${EXTRA_ARGS// /_}
 
 case ${DATASET} in
@@ -19,7 +24,7 @@ case ${DATASET} in
     TRAIN_IMDB="voc_2007_trainval"
     TEST_IMDB="voc_2007_test"
     STEPSIZE="[50000]"
-    ITERS=70000
+    ITERS=${ITERS}
     ANCHORS="[8,16,32]"
     RATIOS="[0.5,1,2]"
     ;;
@@ -27,7 +32,7 @@ case ${DATASET} in
     TRAIN_IMDB="voc_2007_trainval+voc_2012_trainval"
     TEST_IMDB="voc_2007_test"
     STEPSIZE="[80000]"
-    ITERS=110000
+    ITERS=${ITERS}
     ANCHORS="[8,16,32]"
     RATIOS="[0.5,1,2]"
     ;;
@@ -35,7 +40,7 @@ case ${DATASET} in
     TRAIN_IMDB="coco_2014_train+coco_2014_valminusminival"
     TEST_IMDB="coco_2014_minival"
     STEPSIZE="[350000]"
-    ITERS=490000
+    ITERS=${ITERS}
     ANCHORS="[4,8,16,32]"
     RATIOS="[0.5,1,2]"
     ;;
@@ -67,8 +72,12 @@ if [ ! -f ${NET_FINAL}.index ]; then
       --cfg experiments/cfgs/${NET}.yml \
       --tag ${EXTRA_ARGS_SLUG} \
       --net ${NET} \
+      --ratio_data ${RATIO_DATA} \
+      --ratio_bbox ${RATIO_BBOX} \
+      --rpn_cls_method ${RPN_CLS_METHOD} \
+      --rcn_cls_method ${RCN_CLS_METHOD} \
       --set ANCHOR_SCALES ${ANCHORS} ANCHOR_RATIOS ${RATIOS} \
-      TRAIN.STEPSIZE ${STEPSIZE} ${EXTRA_ARGS}
+      TRAIN.STEPSIZE ${STEPSIZE} 
   else
     CUDA_VISIBLE_DEVICES=${GPU_ID} time python ./tools/trainval_net.py \
       --weight data/imagenet_weights/${NET}.ckpt \
@@ -77,9 +86,13 @@ if [ ! -f ${NET_FINAL}.index ]; then
       --iters ${ITERS} \
       --cfg experiments/cfgs/${NET}.yml \
       --net ${NET} \
+      --ratio_data ${RATIO_DATA} \
+      --ratio_bbox ${RATIO_BBOX} \
+      --rpn_cls_method ${RPN_CLS_METHOD} \
+      --rcn_cls_method ${RCN_CLS_METHOD} \
       --set ANCHOR_SCALES ${ANCHORS} ANCHOR_RATIOS ${RATIOS} \
-      TRAIN.STEPSIZE ${STEPSIZE} ${EXTRA_ARGS}
+      TRAIN.STEPSIZE ${STEPSIZE} 
   fi
 fi
 
-./experiments/scripts/test_faster_rcnn.sh $@
+./experiments/scripts/test_faster_rcnn.sh ${GPU_ID} ${DATASET} ${NET} ${ITERS} ${EXTRA_ARGS}

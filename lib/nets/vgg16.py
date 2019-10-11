@@ -17,8 +17,8 @@ from nets.network import Network
 from model.config import cfg
 
 class vgg16(Network):
-  def __init__(self):
-    Network.__init__(self)
+  def __init__(self,rpn_cls_method,rcn_cls_method,num_classes):
+    Network.__init__(self,rpn_cls_method,rcn_cls_method,num_classes)
     self._feat_stride = [16, ]
     self._feat_compress = [1. / float(self._feat_stride[0]), ]
     self._scope = 'vgg_16'

@@ -24,12 +24,14 @@ from model.config import cfg
 
 
 class pascal_voc(imdb):
-  def __init__(self, image_set, year, use_diff=False):
-    name = 'voc_' + year + '_' + image_set
+  def __init__(self, image_set, year, ratio_data, ratio_bbox, use_diff=True):
+    name = 'voc_' + year + '_' + image_set + '_' + str(int(ratio_data*100)) + '_' + str(int(ratio_bbox*100)) 
     if use_diff:
       name += '_diff'
     imdb.__init__(self, name)
     self._year = year
+    self._ratio_data = ratio_data
+    self._ratio_bbox = ratio_bbox
     self._image_set = image_set
     self._devkit_path = self._get_default_path()
     self._data_path = os.path.join(self._devkit_path, 'VOC' + self._year)
@@ -87,13 +89,17 @@ class pascal_voc(imdb):
       'Path does not exist: {}'.format(image_set_file)
     with open(image_set_file) as f:
       image_index = [x.strip() for x in f.readlines()]
+    
+    image_index = image_index[:int(len(image_index)*self._ratio_data)]
+    
     return image_index
 
   def _get_default_path(self):
     """
     Return the default path where PASCAL VOC is expected to be installed.
     """
-    return os.path.join(cfg.DATA_DIR, 'VOCdevkit' + self._year)
+    return os.path.join(cfg.DATA_DIR, 'VOCdevkit')
+        
 
   def gt_roidb(self):
     """
@@ -143,7 +149,7 @@ class pascal_voc(imdb):
     Load image and bounding boxes info from XML file in the PASCAL VOC
     format.
     """
-    filename = os.path.join(self._data_path, 'Annotations', index + '.xml')
+    filename = os.path.join(self._data_path, 'Annotations_{}'.format(self._ratio_bbox), index + '.xml')
     tree = ET.parse(filename)
     objs = tree.findall('object')
     if not self.config['use_diff']:

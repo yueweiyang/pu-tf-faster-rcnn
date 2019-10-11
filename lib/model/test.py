@@ -145,7 +145,7 @@ def test_net(sess, net, imdb, weights_filename, max_per_image=100, thresh=0.):
   all_boxes = [[[] for _ in range(num_images)]
          for _ in range(imdb.num_classes)]
 
-  output_dir = get_output_dir(imdb, weights_filename)
+  output_dir = get_output_dir(imdb.name, weights_filename)
   # timers
   _t = {'im_detect' : Timer(), 'misc' : Timer()}
 

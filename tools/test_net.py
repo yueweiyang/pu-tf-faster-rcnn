@@ -44,6 +44,12 @@ def parse_args():
   parser.add_argument('--net', dest='net',
                       help='vgg16, res50, res101, res152, mobile',
                       default='res50', type=str)
+  parser.add_argument('--rpn_cls_method', dest='rpn_cls_method',
+                      help='RPN Classfication Methods', default='PN',
+                      type=str)
+  parser.add_argument('--rcn_cls_method', dest='rcn_cls_method',
+                      help='RCN Classfication Methods', default='PN',
+                      type=str)
   parser.add_argument('--set', dest='set_cfgs',
                         help='set config keys', default=None,
                         nargs=argparse.REMAINDER)
@@ -90,17 +96,18 @@ if __name__ == '__main__':
   sess = tf.Session(config=tfconfig)
   # load network
   if args.net == 'vgg16':
-    net = vgg16()
+    net = vgg16(args.rpn_cls_method,args.rcn_cls_method,imdb.num_classes)
   elif args.net == 'res50':
-    net = resnetv1(num_layers=50)
+    net = resnetv1(args.rpn_cls_method,args.rcn_cls_method,imdb.num_classes,num_layers=50)
   elif args.net == 'res101':
-    net = resnetv1(num_layers=101)
+    net = resnetv1(args.rpn_cls_method,args.rcn_cls_method,imdb.num_classes,num_layers=101)
   elif args.net == 'res152':
-    net = resnetv1(num_layers=152)
+    net = resnetv1(args.rpn_cls_method,args.rcn_cls_method,imdb.num_classes,num_layers=152)
   elif args.net == 'mobile':
     net = mobilenetv1()
   else:
     raise NotImplementedError
+
 
   # load model
   net.create_architecture("TEST", imdb.num_classes, tag='default',
